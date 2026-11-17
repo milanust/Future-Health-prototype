@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- No network: scripts and styles from this folder only, and no outgoing connections. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; form-action 'none'">
+  <title>Wellbeing Check-in (Prototype)</title>
+  <style>
+    :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #5b5b57; --card: #ffffff; --accent: #2e6b4f; --warn: #8a3b12; --warn-bg: #fdf1e8; --line: #c9c9c3; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #161715; --fg: #ecece8; --muted: #a8a8a2; --card: #1f201d; --accent: #7fc4a0; --warn: #f2b58c; --warn-bg: #3a2418; --line: #4a4b46; }
+    }
+    :root[data-theme="dark"] { --bg: #161715; --fg: #ecece8; --muted: #a8a8a2; --card: #1f201d; --accent: #7fc4a0; --warn: #f2b58c; --warn-bg: #3a2418; --line: #4a4b46; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border-radius: 10px; padding: 16px; margin: 12px 0; }
+    h1 { font-size: 22px; margin: 8px 0 4px; }
+    h2 { font-size: 17px; margin: 0 0 8px; color: var(--accent); }
+    .field { margin: 10px 0; }
+    label { display: block; margin: 0 0 4px; }
+    select, textarea, input, button { font: inherit; width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+    textarea { min-height: 64px; }
+    button { background: var(--accent); color: #fff; border: none; margin-top: 10px; cursor: pointer; }
+    button.choice { background: transparent; color: var(--fg); border: 1px solid var(--line); margin: 4px 0; text-align: left; }
+    nav { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+    nav button { width: auto; margin: 0; padding: 8px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--line); }
+    nav button.active { background: var(--accent); color: #fff; }
+    .warn { background: var(--warn-bg); color: var(--warn); border-left: 4px solid var(--warn); }
+    .muted { color: var(--muted); font-size: 14px; }
+    .result { font-size: 15px; }
+    ul { padding-left: 20px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Wellbeing check-in</h1>
+  <p class="muted">Prototype for review. This is wellness guidance, not medical advice or diagnosis. Your data stays on this device.</p>
+
+  <section id="safety" class="card warn" hidden>
+    <strong>Please read this first.</strong>
+    <p id="safety-text"></p>
+  </section>
+
+  <section id="gate" class="card" hidden>
+    <h2 id="gate-title">Create your private record</h2>
+    <form id="create-form" hidden>
+      <div class="field">
+        <label for="age_band">Age band</label>
+        <select id="age_band" name="age_band"></select>
+      </div>
+      <div class="field">
+        <label for="passphrase">Passphrase (at least 8 characters)</label>
+        <input id="passphrase" name="passphrase" type="password" autocomplete="new-password" required>
+      </div>
+      <div class="field">
+        <label for="confirm">Repeat passphrase</label>
+        <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <p class="muted">Your data is encrypted with this passphrase. There is no recovery if you forget it.</p>
+      <button type="submit">Create record</button>
+    </form>
+    <form id="unlock-form" hidden>
+      <div class="field">
+        <label for="unlock-pass">Passphrase</label>
+        <input id="unlock-pass" name="passphrase" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Unlock</button>
+    </form>
+    <p id="gate-message" class="muted"></p>
+  </section>
+
+  <div id="main" hidden>
+    <nav>
+      <button type="button" class="active" data-panel="daily">Daily</button>
+      <button type="button" data-panel="weekly">Weekly</button>
+      <button type="button" data-panel="heart">Heart and recall</button>
+      <button type="button" data-panel="privacy">Privacy</button>
+    </nav>
+
+    <section id="daily" class="panel card">
+      <h2>Daily check-in</h2>
+      <form id="daily-form">
+        <div id="daily-fields"></div>
+        <button type="submit">Save today</button>
+      </form>
+      <p id="daily-result" class="result"></p>
+    </section>
+
+    <section id="weekly" class="panel card" hidden>
+      <h2>Weekly reflection</h2>
+      <p class="muted">Ayurvedic reflection: 1 = never, 5 = always. Self-report only. PHQ-9: a standard screening questionnaire.</p>
+      <form id="weekly-form">
+        <div id="weekly-fields"></div>
+        <button type="submit">Save this week</button>
+      </form>
+      <p id="weekly-extra" class="result warn"></p>
+      <p id="weekly-result" class="result"></p>
+      <p id="weekly-history" class="muted"></p>
+    </section>
+
+    <section id="heart" class="panel card" hidden>
+      <h2>Heart rate and recall</h2>
+      <p class="muted">Works with Bluetooth heart-rate devices such as chest straps. Chrome or Edge on a computer or Android phone. Apple Watch needs a native HealthKit app.</p>
+      <button type="button" id="connect-hr">Connect heart-rate device</button>
+      <p id="heart-status" class="muted"></p>
+      <h2>Explain a rise</h2>
+      <p id="pending-note" class="muted"></p>
+      <ul id="pending"></ul>
+      <p class="muted">Choose what you were doing at that time. If you cannot remember, choose "I don't remember". That answer is recorded too.</p>
+      <textarea id="recall-other" placeholder="Describe it here if you chose 'Something else' (optional)"></textarea>
+      <div id="recall-choices"></div>
+      <p id="recall-summary" class="muted"></p>
+    </section>
+
+    <section id="privacy" class="panel card" hidden>
+      <h2>Privacy and your data</h2>
+      <p>Your records are stored only in this browser on this device, encrypted with your passphrase. Nothing is sent to any server. Nothing leaves the device unless you export it yourself (not yet available in this prototype).</p>
+      <p id="counts" class="muted"></p>
+      <button type="button" id="forget">Delete all data on this device</button>
+    </section>
+
+    <section class="card">
+      <h2>Pattern</h2>
+      <p id="pattern" class="muted">Loading...</p>
+      <h2>Routine ideas</h2>
+      <p id="routine-note" class="muted"></p>
+      <ul id="routines"></ul>
+    </section>
+  </div>
+</main>
+<script>
+// ---- safety.js ----
+// Rule-based safety layer. Runs before any reply and does not depend on the model.
+// Patterns are a starting set for prototype testing; the partner and a clinical advisor must review them.
+(function (root) {
+  const CRISIS_PATTERNS = [
+    /\b(kill|end|take)\s+(my|own)\s+life\b/i,
+    /\b(kill|end)\s+myself\b/i,
+    /\bsuicid(e|al)\b/i,
+    /\bself[- ]?harm\b/i,
+    /\bcut(ting)?\s+myself\b/i,
+    /\bwant\s+to\s+die\b/i,
+    /\bdon'?t\s+want\s+to\s+(live|be\s+alive)\b/i,
+    /\bno\s+reason\s+to\s+live\b/i,
+    /\bhurt\s+(myself|me)\b/i,
+    /\boverdos(e|ing)\b/i
+  ];
+
+  const SEVERE_PATTERNS = [
+    /\bcan'?t\s+(cope|take\s+it\s+any\s*more)\b/i,
+    /\bhopeless\b/i,
+    /\bnobody\s+would\s+miss\s+me\b/i
+  ];
+
+  const CRISIS_REPLY =
+    "I'm concerned about your safety. Please contact someone now. " +
+    "If you are in immediate danger, call 999 (police) or 998 (ambulance), or go to the nearest emergency department. " +
+    "You can also speak to someone you trust. A person on our team will review this conversation.";
+
+  // Helpline numbers must be confirmed by the partner before release.
+  const SEVERE_REPLY =
+    "That sounds really hard. It may help to talk to a health professional soon. " +
+    "If things feel unsafe at any point, please contact emergency services or a helpline you trust. " +
+    "A person on our team will review this conversation.";
+
+  function classify(text) {
+    const input = String(text || "");
+    if (CRISIS_PATTERNS.some((p) => p.test(input))) {
+      return { level: "crisis", escalate: true, reply: CRISIS_REPLY };
+    }
+    if (SEVERE_PATTERNS.some((p) => p.test(input))) {
+      return { level: "severe", escalate: true, reply: SEVERE_REPLY };
+    }
+    return { level: "ok", escalate: false, reply: null };
+  }
+
+  const api = { classify, CRISIS_REPLY, SEVERE_REPLY };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.SafetyLayer = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+// ---- library.js ----
+// Routine library. DRAFT: pending partner review. Do not release to users until each item has approved_by set.
+// Loaded as a script (not JSON) so the prototype runs from a local file without a server.
+window.ROUTINE_LIBRARY = {
+  status: "DRAFT - pending partner review",
+  items: [
+    {
+      id: "routine-morning-rhythm",
+      trigger: "sleep_poor",
+      title: "Gentle morning rhythm",
+      text: "Wake at a consistent time, drink warm water, and spend two minutes sitting quietly before screens.",
+      approved_by: null
+    },
+    {
+      id: "breath-nadi-shodhana",
+      trigger: "stress_high",
+      title: "Alternate-nostril breathing",
+      text: "Sit comfortably. For three minutes, breathe slowly through alternate nostrils. Stop if you feel dizzy.",
+      approved_by: null
+    },
+    {
+      id: "wind-down-evening",
+      trigger: "sleep_poor",
+      title: "Evening wind-down",
+      text: "Dim lights an hour before bed and keep the last meal light and early.",
+      approved_by: null
+    },
+    {
+      id: "mood-daily-walk",
+      trigger: "mood_low",
+      title: "Short daily walk",
+      text: "A ten-minute walk in daylight, at a pace that feels comfortable, can lift mood for some people.",
+      approved_by: null
+    },
+    {
+      id: "general-steady-routine",
+      trigger: "default",
+      title: "Keep a steady routine",
+      text: "Small, regular habits such as meals at set times and a short daily pause often help people feel more settled.",
+      approved_by: null
+    }
+  ]
+};
+
+// ---- logic.js ----
+// Pattern detection and routine selection. Pure functions, so they can be tested without the page.
+// Scores are 1 (worst) to 5 (best) for mood, sleep and energy; stress is 1 (calm) to 5 (very stressed).
+(function (root) {
+  const WINDOW_DAYS = 7;
+  const MIN_ENTRIES = 3;
+
+  function average(values) {
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+
+  // Returns trigger names for sustained change over the most recent entries.
+  // Entries are ordered oldest first. Describes patterns; never labels a condition.
+  function detectTriggers(entries) {
+    const recent = entries.slice(-WINDOW_DAYS);
+    if (recent.length < MIN_ENTRIES) return [];
+
+    const triggers = [];
+    const sleepValues = recent.map((e) => e.sleep);
+    const stressValues = recent.map((e) => e.stress);
+    const moodValues = recent.map((e) => e.mood);
+
+    if (average(sleepValues) <= 2.5) triggers.push("sleep_poor");
+    if (average(stressValues) >= 4) triggers.push("stress_high");
+    if (average(moodValues) <= 2.5) triggers.push("mood_low");
+    return triggers;
+  }
+
+  // Picks approved-or-draft routines for the given triggers, falling back to the default item.
+  function pickRoutines(library, triggers) {
+    const matched = library.items.filter((item) => triggers.includes(item.trigger));
+    if (matched.length > 0) return matched;
+    return library.items.filter((item) => item.trigger === "default");
+  }
+
+  // Only items approved by the partner may be shown to users.
+  function releasable(items) {
+    return items.filter((item) => Boolean(item.approved_by));
+  }
+
+  const api = { detectTriggers, pickRoutines, releasable };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.WellbeingLogic = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+// ---- questions.js ----
+// Questionnaires and scoring.
+// Ayurvedic items are a self-report reflection based on the traditional framework (Dinacharya, Ahara, Nidra,
+// Agni, Vihara, Svapna, Dosha). They are not a validated test or a diagnosis. Review them with a qualified practitioner.
+// PHQ-9 is a validated screening questionnaire. Item 9 always triggers the safety check.
+(function (root) {
+  const YESNO = "yesno";
+  const SCALE = "scale";
+  const NUMBER = "number";
+  const CHOICE = "choice";
+  const TEXT = "text";
+
+  const DAILY = [
+    { id: "sleep_hours", label: "Hours of sleep last night", type: NUMBER, min: 0, max: 16 },
+    { id: "sleep", label: "Sleep quality (1 = very poor, 5 = restful)", type: SCALE },
+    { id: "woke_usual_time", label: "Did you wake at your usual time? (Dinacharya, daily rhythm)", type: YESNO },
+    { id: "last_meal_early", label: "Did you finish your last meal 2-3 hours before bed? (Ahara)", type: YESNO },
+    { id: "fasting", label: "Were you fasting today (for example, Ramadan)?", type: YESNO },
+    { id: "water_glasses", label: "Glasses of water today, including warm water sips (Jala)", type: NUMBER, min: 0, max: 30 },
+    { id: "meals", label: "Number of meals today", type: NUMBER, min: 0, max: 8 },
+    { id: "carbs_g", label: "Carbohydrates today (grams, from your food log)", type: NUMBER, min: 0, max: 1000 },
+    { id: "protein_g", label: "Protein today (grams)", type: NUMBER, min: 0, max: 500 },
+    { id: "fat_g", label: "Fat today (grams)", type: NUMBER, min: 0, max: 400 },
+    { id: "activity_min", label: "Minutes of physical activity: walking, jogging, yoga (Vihara)", type: NUMBER, min: 0, max: 600 },
+    { id: "pranayama_min", label: "Minutes of breathing practice or meditation (Pranayama)", type: NUMBER, min: 0, max: 180 },
+    { id: "mood", label: "Mood (1 = very low, 5 = good)", type: SCALE },
+    { id: "energy", label: "Energy (1 = very low, 5 = high)", type: SCALE },
+    { id: "stress_work", label: "Job or work stress (1 = none, 5 = severe)", type: SCALE },
+    { id: "stress_financial", label: "Financial stress (1 = none, 5 = severe)", type: SCALE },
+    { id: "stress_relationship", label: "Relationship or family stress (1 = none, 5 = severe)", type: SCALE },
+    { id: "stress_personal", label: "Personal health or other stress (1 = none, 5 = severe)", type: SCALE },
+    { id: "dream_recalled", label: "Did you recall a dream last night? (Svapna)", type: YESNO },
+    {
+      id: "dream_tone",
+      label: "If yes, how did the dream feel?",
+      type: CHOICE,
+      options: [["pleasant", "Pleasant"], ["neutral", "Neutral"], ["disturbing", "Disturbing"], ["nightmare", "Nightmare"], ["recurring", "Recurring theme"]]
+    },
+    { id: "note", label: "Anything else you want to note (optional)", type: TEXT }
+  ];
+
+  // Scored 1 (never) to 5 (always). reverse: true for positive statements, so a higher score always means more imbalance.
+  const AYURVEDA = [
+    { id: "vata_restless", group: "Vata", label: "I felt restless or anxious", reverse: false },
+    { id: "vata_dry", group: "Vata", label: "I felt dry, cold or constipated", reverse: false },
+    { id: "vata_routine", group: "Vata", label: "My daily routine was irregular", reverse: false },
+    { id: "pitta_irritable", group: "Pitta", label: "I felt irritable or quick to anger", reverse: false },
+    { id: "pitta_heat", group: "Pitta", label: "I felt overheated, or had heartburn or acidity", reverse: false },
+    { id: "pitta_driven", group: "Pitta", label: "I pushed myself hard with little rest", reverse: false },
+    { id: "kapha_heavy", group: "Kapha", label: "I felt heavy or sluggish", reverse: false },
+    { id: "kapha_oversleep", group: "Kapha", label: "I slept longer than I needed and woke up heavy", reverse: false },
+    { id: "agni_comfort", group: "Agni", label: "After meals I felt light and comfortable", reverse: true },
+    { id: "agni_bloat", group: "Agni", label: "I felt bloated or had poor digestion", reverse: false },
+    { id: "manas_clear", group: "Manas", label: "My mind felt clear and calm", reverse: true },
+    { id: "manas_focus", group: "Manas", label: "I found it hard to focus", reverse: false }
+  ].map((item) => Object.assign({ type: SCALE }, item));
+
+  const PHQ9_OPTIONS = [[0, "Not at all"], [1, "Several days"], [2, "More than half the days"], [3, "Nearly every day"]];
+  const PHQ9 = [
+    "Little interest or pleasure in doing things",
+    "Feeling down, depressed, or hopeless",
+    "Trouble falling or staying asleep, or sleeping too much",
+    "Feeling tired or having little energy",
+    "Poor appetite or overeating",
+    "Feeling bad about yourself, or that you are a failure or have let yourself or your family down",
+    "Trouble concentrating on things, such as reading or watching television",
+    "Moving or speaking so slowly that others noticed, or being so restless that you moved more than usual",
+    "Thoughts that you would be better off dead, or of hurting yourself"
+  ].map((text, i) => ({
+    id: "phq9_" + (i + 1),
+    label: "Over the last 2 weeks: " + text,
+    type: CHOICE,
+    options: PHQ9_OPTIONS
+  }));
+
+  const WEEKLY_EXTRA = [
+    { id: "substance_use", label: "Did you use any non-prescribed substances this week? (optional, private)", type: YESNO }
+  ];
+
+  const WEEKLY = [].concat(AYURVEDA, PHQ9, WEEKLY_EXTRA);
+
+  // Macro percentages from grams, using 4 kcal per gram of carbohydrate and protein and 9 kcal per gram of fat.
+  function macroPercent(grams) {
+    const carbs = 4 * (Number(grams.carbs_g) || 0);
+    const protein = 4 * (Number(grams.protein_g) || 0);
+    const fat = 9 * (Number(grams.fat_g) || 0);
+    const total = carbs + protein + fat;
+    if (total === 0) return null;
+    return { carbs: (carbs / total) * 100, protein: (protein / total) * 100, fat: (fat / total) * 100 };
+  }
+
+  // Acceptable Macronutrient Distribution Ranges for adults (percent of energy), as published by the US Institute of Medicine.
+  const AMDR = { carbs: [45, 65], protein: [10, 35], fat: [20, 35] };
+
+  function macroStatus(percent) {
+    const status = {};
+    Object.keys(AMDR).forEach((key) => {
+      const range = AMDR[key];
+      status[key] = percent[key] < range[0] ? "low" : percent[key] > range[1] ? "high" : "within";
+    });
+    return status;
+  }
+
+  // Average per Ayurvedic group, after reversing positive items. Scores of 4 or more are worth a conversation.
+  function ayurvedaGroupScores(answers) {
+    const groups = {};
+    AYURVEDA.forEach((item) => {
+      const value = answers[item.id];
+      if (value == null) return;
+      const adjusted = item.reverse ? 6 - value : value;
+      if (!groups[item.group]) groups[item.group] = [];
+      groups[item.group].push(adjusted);
+    });
+    const scores = {};
+    Object.keys(groups).forEach((group) => {
+      const values = groups[group];
+      scores[group] = Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+    });
+    return scores;
+  }
+
+  function phq9Total(answers) {
+    const values = PHQ9.map((q) => answers[q.id]);
+    if (values.some((v) => v == null)) return null;
+    return values.reduce((a, b) => a + b, 0);
+  }
+
+  function phq9Band(total) {
+    if (total <= 4) return "minimal";
+    if (total <= 9) return "mild";
+    if (total <= 14) return "moderate";
+    if (total <= 19) return "moderately severe";
+    return "severe";
+  }
+
+  // True when three or more of the last seven recorded dreams felt disturbing or were nightmares.
+  function dreamAlert(entries) {
+    const recent = entries.slice(-7);
+    const count = recent.filter((e) => e.dream_tone === "disturbing" || e.dream_tone === "nightmare").length;
+    return count >= 3;
+  }
+
+  const api = {
+    DAILY, WEEKLY, AYURVEDA, PHQ9, PHQ9_OPTIONS,
+    macroPercent, macroStatus, AMDR, ayurvedaGroupScores, phq9Total, phq9Band, dreamAlert
+  };
+  root.Questions = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+// ---- store.js ----
+// Local, encrypted store. Data is kept only in this browser on this device, encrypted with a key derived from
+// the user's passphrase (PBKDF2-SHA-256 to AES-GCM 256). Nothing is sent to a server. There is no passphrase recovery.
+(function (root) {
+  const VAULT_KEY = "wellbeing-vault-v1";
+  const ITERATIONS = 200000;
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  let key = null;
+  let salt = null;
+  let data = null;
+
+  function toBase64(bytes) {
+    let text = "";
+    bytes.forEach((b) => { text += String.fromCharCode(b); });
+    return btoa(text);
+  }
+
+  function fromBase64(text) {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function emptyData() {
+    return { profile: {}, checkins: [], weekly: [], heartSamples: [], spikes: [], recallEvents: [], escalations: [] };
+  }
+
+  async function deriveKey(passphrase, saltBytes) {
+    const base = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: saltBytes, iterations: ITERATIONS, hash: "SHA-256" },
+      base,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  async function save() {
+    if (!key) return;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(JSON.stringify(data)));
+    const packed = new Uint8Array(16 + 12 + cipher.byteLength);
+    packed.set(salt, 0);
+    packed.set(iv, 16);
+    packed.set(new Uint8Array(cipher), 28);
+    try {
+      localStorage.setItem(VAULT_KEY, toBase64(packed));
+    } catch (err) {
+      // Storage blocked (for example a private window). Data stays in memory for this visit only.
+    }
+  }
+
+  function hasVault() {
+    try {
+      return localStorage.getItem(VAULT_KEY) !== null;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function create(passphrase) {
+    salt = crypto.getRandomValues(new Uint8Array(16));
+    key = await deriveKey(passphrase, salt);
+    data = emptyData();
+    await save();
+  }
+
+  // Throws if the passphrase is wrong (AES-GCM authentication fails).
+  async function unlock(passphrase) {
+    const packed = fromBase64(localStorage.getItem(VAULT_KEY));
+    const saltBytes = packed.slice(0, 16);
+    const iv = packed.slice(16, 28);
+    const cipher = packed.slice(28);
+    const candidate = await deriveKey(passphrase, saltBytes);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, candidate, cipher);
+    key = candidate;
+    salt = saltBytes;
+    data = JSON.parse(dec.decode(plain));
+  }
+
+  function isUnlocked() {
+    return key !== null;
+  }
+
+  function list(name) {
+    return data[name];
+  }
+
+  async function add(name, item) {
+    data[name].push(item);
+    await save();
+  }
+
+  async function setProfile(profile) {
+    data.profile = profile;
+    await save();
+  }
+
+  async function trimHeartSamples(cutoff) {
+    data.heartSamples = data.heartSamples.filter((s) => s.t >= cutoff);
+    await save();
+  }
+
+  function forgetAll() {
+    try {
+      localStorage.removeItem(VAULT_KEY);
+    } catch (err) {
+      // Nothing to remove if storage is unavailable.
+    }
+    key = null;
+    salt = null;
+    data = null;
+  }
+
+  const api = { create, unlock, hasVault, isUnlocked, list, add, setProfile, trimHeartSamples, forgetAll, data: () => data };
+  root.LocalVault = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+// ---- heart.js ----
+// Heart-rate logic. Connects to any Bluetooth heart-rate device that uses the standard Heart Rate service
+// (chest straps and some watches). Apple Watch needs a native HealthKit app, and browsers on iPhone cannot use Web Bluetooth.
+// Readings are averaged per minute and kept only in the local vault.
+(function (root) {
+  const HR_SERVICE = "heart_rate";
+  const HR_CHAR = "heart_rate_measurement";
+  const SPIKE_MARGIN = 25;          // bpm above the personal baseline
+  const MIN_BASELINE_SAMPLES = 20;  // minutes of readings needed before spikes are judged
+  const MIN_GAP_MS = 30 * 60000;    // at most one prompt per 30 minutes
+  const DAY_MS = 864e5;
+
+  // Standard Heart Rate Measurement: flags bit 0 selects 8-bit (0) or 16-bit (1) heart rate value.
+  function parseHeartRate(view) {
+    const flags = view.getUint8(0);
+    return flags & 0x01 ? view.getUint16(1, true) : view.getUint8(1);
+  }
+
+  // Collapses readings into one average per minute and passes each finished minute to onMinute.
+  function createMinuteAggregator(onMinute) {
+    let minute = null;
+    let total = 0;
+    let count = 0;
+
+    function flush() {
+      if (count > 0) onMinute({ t: minute, bpm: Math.round(total / count) });
+    }
+
+    return function feed(bpm, now) {
+      const current = Math.floor(now / 60000) * 60000;
+      if (minute !== null && current !== minute) {
+        flush();
+        total = 0;
+        count = 0;
+      }
+      minute = current;
+      total += bpm;
+      count += 1;
+    };
+  }
+
+  // Median of the last seven days of minute readings. Null until there is enough data.
+  function baselineFrom(samples, now) {
+    const cutoff = now - 7 * DAY_MS;
+    const values = samples.filter((s) => s.t >= cutoff).map((s) => s.bpm).sort((a, b) => a - b);
+    if (values.length < MIN_BASELINE_SAMPLES) return null;
+    return values[Math.floor(values.length / 2)];
+  }
+
+  function isSpike(sample, baseline) {
+    return baseline !== null && sample.bpm >= baseline + SPIKE_MARGIN;
+  }
+
+  // Only prompt if no spike was recorded in the last 30 minutes.
+  function shouldPrompt(sample, spikes) {
+    const last = spikes.length ? spikes[spikes.length - 1].t : null;
+    return last === null || sample.t - last >= MIN_GAP_MS;
+  }
+
+  // Recall summary for the last 30 days. Flags when the user often cannot say what they were doing.
+  function recallSummary(events, now) {
+    const cutoff = now - 30 * DAY_MS;
+    const recent = events.filter((e) => e.answeredAt >= cutoff);
+    const prompted = recent.length;
+    const dontRemember = recent.filter((e) => e.answer === "dont_remember").length;
+    const explainedByActivity = recent.filter((e) => e.answer === "activity").length;
+    return {
+      prompted: prompted,
+      dontRemember: dontRemember,
+      explainedByActivity: explainedByActivity,
+      flag: prompted >= 4 && dontRemember / prompted >= 0.5
+    };
+  }
+
+  // Requires a user gesture (button click). The browser shows its own device picker.
+  async function connect(onBpm) {
+    if (!navigator.bluetooth) {
+      throw new Error("Bluetooth is not available in this browser. Use Chrome or Edge on a computer or Android phone.");
+    }
+    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [HR_SERVICE] }] });
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(HR_SERVICE);
+    const characteristic = await service.getCharacteristic(HR_CHAR);
+    characteristic.addEventListener("characteristicvaluechanged", (event) => {
+      onBpm(parseHeartRate(event.target.value), Date.now());
+    });
+    await characteristic.startNotifications();
+    return device;
+  }
+
+  const api = { parseHeartRate, createMinuteAggregator, baselineFrom, isSpike, shouldPrompt, recallSummary, connect };
+  root.HeartLogic = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+// ---- app.js ----
+// Prototype UI. Every free-text answer passes the safety layer before anything else happens.
+(function () {
+  // Prototype only. Set to false before any user sees the page: drafts must not reach users.
+  const SHOW_DRAFT_ROUTINES = true;
+  const WATER_TARGET = 8;
+  const STRESS_FIELDS = ["stress_work", "stress_financial", "stress_relationship", "stress_personal"];
+  const RECALL_OPTIONS = [
+    ["activity", "Jogging or exercise"],
+    ["work", "Job or work stress"],
+    ["financial", "Financial stress"],
+    ["relationship", "Relationship or family stress"],
+    ["personal", "Personal health or worry"],
+    ["rest", "Resting, eating or drinking"],
+    ["dont_remember", "I don't remember"],
+    ["other", "Something else (describe below)"]
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  function show(id, visible) {
+    $(id).hidden = !visible;
+  }
+
+  function text(id, value) {
+    $(id).textContent = value;
+  }
+
+  function make(tag, props) {
+    const node = document.createElement(tag);
+    Object.keys(props || {}).forEach((key) => {
+      if (key === "text") node.textContent = props[key];
+      else node[key] = props[key];
+    });
+    return node;
+  }
+
+  function safetyNotice(replyText) {
+    show("safety", true);
+    text("safety-text", replyText);
+  }
+
+  function logEscalation(level, note) {
+    LocalVault.add("escalations", { t: Date.now(), level: level, note: note });
+  }
+
+  // Runs the rule-based check on free text. Returns true if the user should see the safety notice.
+  function checkFreeText(note) {
+    const result = SafetyLayer.classify(note);
+    if (result.escalate) {
+      safetyNotice(result.reply);
+      logEscalation(result.level, note);
+    }
+    return result.escalate;
+  }
+
+  function options(q) {
+    if (q.type === "yesno") return [["", "-- choose --"], ["yes", "Yes"], ["no", "No"]];
+    if (q.type === "scale") {
+      const list = [["", "-- choose --"]];
+      for (let v = 1; v <= 5; v++) list.push([String(v), String(v)]);
+      return list;
+    }
+    if (q.type === "choice") return [["", "-- choose --"]].concat(q.options.map((o) => [String(o[0]), o[1]]));
+    return [];
+  }
+
+  function buildForm(container, questions) {
+    container.textContent = "";
+    questions.forEach((q) => {
+      const wrap = make("div", { className: "field" });
+      wrap.appendChild(make("label", { htmlFor: q.id, text: q.label }));
+      let control;
+      if (q.type === "text") {
+        control = make("textarea", { id: q.id, name: q.id, maxLength: 500 });
+      } else if (q.type === "number") {
+        control = make("input", { id: q.id, name: q.id, type: "number", min: q.min, max: q.max, step: "any" });
+      } else {
+        control = make("select", { id: q.id, name: q.id });
+        options(q).forEach((o) => control.appendChild(make("option", { value: o[0], text: o[1] })));
+      }
+      wrap.appendChild(control);
+      container.appendChild(wrap);
+    });
+  }
+
+  // Reads typed values back into a plain object. Blank answers become null.
+  function readForm(form, questions) {
+    const values = {};
+    questions.forEach((q) => {
+      const raw = form.elements[q.id].value;
+      if (q.type === "text") values[q.id] = raw.trim();
+      else if (raw === "") values[q.id] = null;
+      else if (q.type === "yesno") values[q.id] = raw === "yes";
+      else if (q.type === "number" || q.type === "scale") values[q.id] = Number(raw);
+      else {
+        const match = q.options.find((o) => String(o[0]) === raw);
+        values[q.id] = match ? match[0] : null;
+      }
+    });
+    return values;
+  }
+
+  // ---------- Setup and unlock ----------
+
+  function showGate() {
+    show("gate", true);
+    show("main", false);
+    const exists = LocalVault.hasVault();
+    show("create-form", !exists);
+    show("unlock-form", exists);
+    text("gate-title", exists ? "Unlock your private record" : "Create your private record");
+  }
+
+  function showMain() {
+    show("gate", false);
+    show("main", true);
+    renderPattern();
+    renderWeeklyHistory();
+    renderHeart();
+    renderPrivacy();
+  }
+
+  async function handleCreate(event) {
+    event.preventDefault();
+    const form = event.target;
+    const pass = form.passphrase.value;
+    if (pass.length < 8) return text("gate-message", "Use at least 8 characters for your passphrase.");
+    if (pass !== form.confirm.value) return text("gate-message", "The two passphrases do not match.");
+    await LocalVault.create(pass);
+    await LocalVault.setProfile({ age_band: form.age_band.value });
+    text("gate-message", "");
+    showMain();
+  }
+
+  async function handleUnlock(event) {
+    event.preventDefault();
+    try {
+      await LocalVault.unlock(event.target.passphrase.value);
+      text("gate-message", "");
+      showMain();
+    } catch (err) {
+      text("gate-message", "That passphrase does not open this record. Data cannot be recovered without it.");
+    }
+  }
+
+  // ---------- Daily check-in ----------
+
+  function initDaily() {
+    buildForm($("daily-fields"), Questions.DAILY);
+    $("daily-form").addEventListener("submit", handleDaily);
+  }
+
+  async function handleDaily(event) {
+    event.preventDefault();
+    const values = readForm(event.target, Questions.DAILY);
+    if (values.mood == null || values.sleep == null || STRESS_FIELDS.some((f) => values[f] == null)) {
+      return text("daily-result", "Please answer mood, sleep quality and the four stress questions.");
+    }
+    // The check-in is still saved when the note triggers the safety notice, so the record is complete.
+    const escalated = checkFreeText(values.note);
+
+    const stressValues = STRESS_FIELDS.map((f) => values[f]);
+    const entry = Object.assign({ t: Date.now(), date: new Date().toISOString().slice(0, 10) }, values, {
+      mood: values.mood,
+      sleep: values.sleep,
+      stress: Math.round((stressValues.reduce((a, b) => a + b, 0) / stressValues.length) * 10) / 10
+    });
+    await LocalVault.add("checkins", entry);
+
+    const lines = [];
+    if (values.fasting) {
+      lines.push("Fasting day: meal and water comparisons are not applied.");
+    } else {
+      if (values.water_glasses != null && values.water_glasses < WATER_TARGET) {
+        lines.push("Water: " + values.water_glasses + " glasses, below the " + WATER_TARGET + "-glass guide.");
+      }
+      const percent = Questions.macroPercent(values);
+      if (percent) {
+        const status = Questions.macroStatus(percent);
+        lines.push(
+          "Macros: carbohydrate " + Math.round(percent.carbs) + "% (" + status.carbs + " range), protein " +
+          Math.round(percent.protein) + "% (" + status.protein + "), fat " + Math.round(percent.fat) + "% (" + status.fat + ")."
+        );
+      }
+    }
+    if (Questions.dreamAlert(LocalVault.list("checkins"))) {
+      lines.push("You have recorded disturbing dreams on 3 or more of the last 7 nights. Consider mentioning this to your practitioner.");
+    }
+    text("daily-result", (escalated ? "Saved on this device. The note was flagged for review. " : "Saved on this device. ") + lines.join(" "));
+    event.target.reset();
+    renderPattern();
+  }
+
+  function renderPattern() {
+    const entries = LocalVault.list("checkins");
+    const triggers = WellbeingLogic.detectTriggers(entries);
+    if (entries.length < 3) text("pattern", "Check in at least 3 times to see patterns (" + entries.length + " so far).");
+    else if (triggers.length === 0) text("pattern", "No sustained change in the last 7 check-ins.");
+    else text("pattern", "Sustained change noticed over recent check-ins: " + triggers.join(", ") + ".");
+
+    const routines = WellbeingLogic.pickRoutines(window.ROUTINE_LIBRARY, triggers);
+    const shown = SHOW_DRAFT_ROUTINES ? routines : WellbeingLogic.releasable(routines);
+    const list = $("routines");
+    list.textContent = "";
+    if (shown.length === 0) {
+      text("routine-note", "Routine suggestions are pending partner review.");
+      return;
+    }
+    text("routine-note", SHOW_DRAFT_ROUTINES ? "DRAFT content for internal review only. Not approved for users." : "");
+    shown.forEach((item) => {
+      const li = make("li");
+      li.appendChild(make("strong", { text: item.title + ": " }));
+      li.appendChild(document.createTextNode(item.text));
+      list.appendChild(li);
+    });
+  }
+
+  // ---------- Weekly reflection ----------
+
+  function initWeekly() {
+    buildForm($("weekly-fields"), Questions.WEEKLY);
+    $("weekly-form").addEventListener("submit", handleWeekly);
+  }
+
+  async function handleWeekly(event) {
+    event.preventDefault();
+    const values = readForm(event.target, Questions.WEEKLY);
+    const total = Questions.phq9Total(values);
+    if (total == null) return text("weekly-result", "Please answer every PHQ-9 question, and every Ayurvedic reflection item.");
+    if (Questions.AYURVEDA.some((item) => values[item.id] == null)) {
+      return text("weekly-result", "Please answer every Ayurvedic reflection item.");
+    }
+
+    // PHQ-9 item 9 asks about thoughts of death or self-harm. Any answer above zero triggers the safety notice.
+    if (values.phq9_9 > 0) {
+      safetyNotice(SafetyLayer.CRISIS_REPLY);
+      logEscalation("phq9_item9", "PHQ-9 item 9 answered " + values.phq9_9);
+    } else {
+      show("safety", false);
+    }
+    if (values.substance_use === true) {
+      text("weekly-extra", "If you want support with substance use, please speak with a health professional or a helpline you trust.");
+    } else {
+      text("weekly-extra", "");
+    }
+
+    await LocalVault.add("weekly", { t: Date.now(), answers: values, phq9_total: total });
+    const groups = Questions.ayurvedaGroupScores(values);
+    const lines = Object.keys(groups).map((g) => g + ": " + groups[g] + (groups[g] >= 4 ? " (high)" : ""));
+    text(
+      "weekly-result",
+      "Saved. PHQ-9 total " + total + " (" + Questions.phq9Band(total) + "). Ayurvedic reflection (1-5, self-report): " + lines.join(", ") + "."
+    );
+    event.target.reset();
+    renderWeeklyHistory();
+  }
+
+  function renderWeeklyHistory() {
+    const weeks = LocalVault.list("weekly");
+    text("weekly-history", weeks.length === 0 ? "No weekly reflections yet." :
+      weeks.length + " weekly reflection(s) saved. Latest PHQ-9 total: " + weeks[weeks.length - 1].phq9_total + ".");
+  }
+
+  // ---------- Heart rate and recall ----------
+
+  let aggregator = null;
+
+  function initHeart() {
+    $("connect-hr").addEventListener("click", connectDevice);
+    const choices = $("recall-choices");
+    RECALL_OPTIONS.forEach((o) => {
+      const button = make("button", { type: "button", className: "choice", text: o[1] });
+      button.addEventListener("click", () => answerRecall(o[0]));
+      choices.appendChild(button);
+    });
+  }
+
+  async function connectDevice() {
+    try {
+      aggregator = HeartLogic.createMinuteAggregator(handleMinute);
+      await HeartLogic.connect((bpm, now) => aggregator(bpm, now));
+      text("heart-status", "Connected. Readings are averaged each minute and stored only on this device.");
+    } catch (err) {
+      text("heart-status", err.message || "Could not connect to a heart-rate device.");
+    }
+  }
+
+  async function handleMinute(sample) {
+    await LocalVault.add("heartSamples", sample);
+    await LocalVault.trimHeartSamples(sample.t - 30 * 864e5);
+    const spikes = LocalVault.list("spikes");
+    const baseline = HeartLogic.baselineFrom(LocalVault.list("heartSamples"), sample.t);
+    if (HeartLogic.isSpike(sample, baseline) && HeartLogic.shouldPrompt(sample, spikes)) {
+      await LocalVault.add("spikes", { t: sample.t, bpm: sample.bpm, baseline: baseline });
+      renderHeart();
+    }
+  }
+
+  function pendingSpikes() {
+    const answered = new Set(LocalVault.list("recallEvents").map((e) => e.spikeT));
+    return LocalVault.list("spikes").filter((s) => !answered.has(s.t));
+  }
+
+  function renderHeart() {
+    const pending = pendingSpikes();
+    const list = $("pending");
+    list.textContent = "";
+    if (pending.length === 0) {
+      text("pending-note", "No heart-rate rises waiting for an answer.");
+    } else {
+      text("pending-note", pending.length + " rise(s) to explain:");
+    }
+    pending.forEach((s) => {
+      const time = new Date(s.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      list.appendChild(make("li", { text: "At " + time + " your heart rate was " + s.bpm + " bpm (your usual is about " + s.baseline + ")." }));
+    });
+
+    const summary = HeartLogic.recallSummary(LocalVault.list("recallEvents"), Date.now());
+    text("recall-summary", summary.prompted === 0
+      ? "No answers yet."
+      : "Last 30 days: " + summary.prompted + " answered, " + summary.dontRemember + " \"don't remember\", " +
+        summary.explainedByActivity + " explained by activity." + (summary.flag ? " Repeated difficulty recalling activity. Worth noting for your practitioner." : ""));
+  }
+
+  async function answerRecall(answer) {
+    const other = $("recall-other").value.trim();
+    if (answer === "other" && checkFreeText(other)) return;
+    const spike = pendingSpikes()[0];
+    if (!spike) return;
+    const now = Date.now();
+    await LocalVault.add("recallEvents", {
+      spikeT: spike.t,
+      answeredAt: now,
+      delayHours: Math.round(((now - spike.t) / 36e5) * 10) / 10,
+      answer: answer,
+      text: answer === "other" ? other : ""
+    });
+    $("recall-other").value = "";
+    renderHeart();
+  }
+
+  // ---------- Privacy ----------
+
+  function initPrivacy() {
+    $("forget").addEventListener("click", () => {
+      if (!confirm("Delete all data stored on this device? This cannot be undone.")) return;
+      LocalVault.forgetAll();
+      showGate();
+    });
+  }
+
+  function renderPrivacy() {
+    const counts = ["checkins", "weekly", "heartSamples", "spikes", "recallEvents", "escalations"]
+      .map((name) => name + ": " + LocalVault.list(name).length);
+    text("counts", counts.join(" | "));
+  }
+
+  // ---------- Tabs ----------
+
+  function initTabs() {
+    document.querySelectorAll("nav button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("section.panel").forEach((p) => { p.hidden = p.id !== button.dataset.panel; });
+        document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b === button));
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    initDaily();
+    initWeekly();
+    initHeart();
+    initPrivacy();
+    initTabs();
+    buildAgeOptions();
+    $("create-form").addEventListener("submit", handleCreate);
+    $("unlock-form").addEventListener("submit", handleUnlock);
+    showGate();
+  });
+
+  function buildAgeOptions() {
+    const select = $("age_band");
+    ["25-29", "30-34", "35-40", "Other"].forEach((band) => select.appendChild(make("option", { value: band, text: band })));
+  }
+})();
+
+</script>
+</body>
+</html>
